@@ -4,7 +4,7 @@ EC2 Bootstrap is a custom Vagrant script used to stand up an entire development 
 
 The tiers consist of Dev, QA, Staging (RC), Prod
 
-In each tier the layers consist of the following layers segregated into individual subnets:
+In each tier the layers consist of the following servers segregated into individual subnets:
 
  - Nginx Load Balancer
  - NodeJS Web server
@@ -15,13 +15,13 @@ Additional Notes
 Nginx: Auto configured to point to the NodeJS webserver in its tier.  
 MongoDB: Auto configured to be replicated and sharded. Uses a master, 2 slaves, and 1 arbiter.
 
-Every server will attempt to assign it's self to and Active Directory server that you assign but that functionality can be removed by removing the networkconf states.
+Every server will attempt to assign it's self to and Active Directory server that you assign but that functionality can be removed by removing references to the networkconf state.
 
-*You will need to fill out any fields formatted as {[example]} as this is info that is needed from your VPC or Domain/DNS Server. A simple find all {[ will help you discover this data.
+You will need to fill out any fields formatted as {[example]} as this is info that is needed from your VPC or Domain/DNS Server. A simple find all {[ will help you discover this data.
 
 *There is a deploy state that will allow for deploying code from the salt master to the NodeJS minions if you choose to use it. You can deploy from your CI server to the salt master and call the deploy state if you wish to limit the ports being exposed on the NodeJS web server.
 
-*In shared/keys replace the ReadMe with the proper pem and pub keys you create that will be listed in the files. These keys are needed in order to perform various ssh tasking. 
+*In shared/keys replace the ReadMe with the proper pem and pub keys which you create and are listed in the ReadMes. These keys are needed in order to perform various ssh tasking.
 
 ## Salt
 - The salt folder contains custom salt states used to provision the minions
