@@ -1,0 +1,8 @@
+### Vagrant ###
+.vagrant/
+
+### Salt ###
+salt/env/base/deploy/dev/
+salt/env/base/deploy/qa/
+salt/env/base/deploy/rc/
+salt/env/base/deploy/prod/

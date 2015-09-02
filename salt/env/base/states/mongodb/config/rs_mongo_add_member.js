@@ -1,0 +1,1 @@
+rs.add("{{grains['host']}}")

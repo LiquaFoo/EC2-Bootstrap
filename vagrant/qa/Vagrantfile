@@ -1,0 +1,150 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+domain = "{[Your Domain Name]}"
+scope = "local"
+ami = "{[Your EC2 AMI key]}"
+subnets = { :application => "", :data => "", :lb => "" }
+isLoadBalanced = false
+lbWeb = "###lbServer-web###\\n"
+lbApi = "###lbServer-api###\\n"
+
+nodes = [
+  { :hostname => "db1",    :instanceType => "m1.medium"},
+  { :hostname => "db2",    :instanceType => "m1.medium"},
+  { :hostname => "db3",    :instanceType => "m1.medium"},
+  { :hostname => "dbcfg1", :instanceType => "m1.small" },
+  { :hostname => "dbcfg2", :instanceType => "m1.small" },
+  { :hostname => "dbcfg3", :instanceType => "m1.small" },
+  { :hostname => "dbrt1",  :instanceType => "m1.small" },
+  { :hostname => "dbrt2",  :instanceType => "m1.small" },
+  { :hostname => "cache1", :instanceType => "m1.small" },
+  { :hostname => "api1",   :instanceType => "m1.small" },
+  { :hostname => "api2",   :instanceType => "m1.small" },
+  { :hostname => "api3",   :instanceType => "m1.small" },
+  { :hostname => "web1",   :instanceType => "m1.small" },
+  { :hostname => "web2",   :instanceType => "m1.small" },
+  { :hostname => "web3",   :instanceType => "m1.small" },
+  { :hostname => "lb1",    :instanceType => "m1.small" },
+]
+
+# set variables based off enviroment
+if ENV["scope"] == "dev"
+   subnets = { :application => "{[Your Dev App Subnet Id]}", :data => "{[Your Dev Data Subnet Id]}", :lb => "{[Your Dev Load Subnet Id]}" }
+   scope = ENV["scope"]
+elsif ENV["scope"] == "qa"
+   subnets = { :application => "{[Your QA App Subnet Id]}", :data => "{[Your QA Data Subnet Id]}", :lb => "{[Your QA Load Subnet Id]}" }
+   scope = ENV["scope"]
+elsif ENV["scope"] == "rc"
+   subnets = { :application => "{[Your RC App Subnet Id]}", :data => "{[Your RC Data Subnet Id]}", :lb => "{[Your RC Load Subnet Id]}" }
+   scope = ENV["scope"]
+elsif ENV["scope"] == "prod"
+   subnets = { :application => "{[Your Prod App Subnet Id]}", :data => "{[Your Prod Data Subnet Id]}", :lb => "{[Your Prod Load Subnet Id]}" }
+   scope = ENV["scope"]
+end
+
+nodes.each do |node|
+  if node[:hostname].downcase.include? "web"
+    lbWeb = lbWeb + "		server " + ENV["scope"] + "-" + node[:hostname] + ":3000;\\n"
+  end
+  if node[:hostname].downcase.include? "api"
+    lbApi = lbApi + "		server " + ENV["scope"] + "-" + node[:hostname] + ":3000;\\n"
+  end
+end
+
+
+# Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
+VAGRANTFILE_API_VERSION = "2"
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
+
+    #fixes stdin: tty bug when running shell scripts
+    config.ssh.shell = "bash -c 'BASH_ENV=/etc/profile exec bash'"
+
+    nodes.each do |node|
+      config.vm.define node[:hostname] do |node_config|
+        #get hostname
+        hostname = scope + "-" + node[:hostname]
+
+        #determine if loadbalancer reconfig is needed
+        if !isLoadBalanced and hostname.downcase.include? "web"
+            isLoadBalanced = true
+        elsif !isLoadBalanced and hostname.downcase.include? "api"
+            isLoadBalanced = true
+        elsif !isLoadBalanced and hostname.downcase.include? "lb"
+            isLoadBalanced = true
+        end
+
+        #box setup
+        node_config.vm.box = "dummy"
+        node_config.vm.box_url = "https://github.com/mitchellh/vagrant-aws/raw/master/dummy.box"
+
+        #aws configurations
+        node_config.vm.provider :aws do |aws, override|
+
+          aws.access_key_id = "AKIAIK2PYGIAMNMO54NA"
+  	  aws.secret_access_key = "0ZEyx5+4NakLoTcqBlUGOGs7aMV8bkTpFVf1JYFr"
+          aws.keypair_name = "{[Your EC2 keypair_name]}"
+
+          #preseed salt master with minion key
+          system("sh /srv/vagrant/shared/configs/preseed.sh " + hostname )
+
+          #set ami (ubuntu 13)
+     	  aws.ami = "ami-35dbde5c"
+	  aws.instance_type = node[:instanceType]
+          aws.security_groups = ["sg-08a37d6d"]
+
+	  #set subnet names
+          if node[:hostname].downcase.include? "web"
+            aws.subnet_id = subnets[:application]
+            aws.tags = {"Name" => scope.upcase + "." + "WEB." + node[:hostname].upcase}
+          elsif node[:hostname].downcase.include? "api"
+            aws.subnet_id = subnets[:application]
+            aws.tags = {"Name" => scope.upcase + "." + "API." + node[:hostname].upcase}
+          elsif node[:hostname].downcase.include? "cache"
+            aws.subnet_id = subnets[:application]
+            aws.tags = {"Name" => scope.upcase + "." + "CACHE." + node[:hostname].upcase}
+          elsif node[:hostname].downcase.include? "db"
+            aws.subnet_id = subnets[:data]
+            aws.tags = {"Name" => scope.upcase + "." + "DATA." + node[:hostname].upcase}
+          elsif node[:hostname].downcase.include? "lb"
+            aws.subnet_id = subnets[:lb]
+            aws.tags = {"Name" => scope.upcase + "." + "LB." + node[:hostname].upcase}
+#            aws.associate_public_ip = true
+           end
+
+          override.ssh.username = "ubuntu"
+	        override.ssh.private_key_path = "/srv/vagrant/shared/keys/build.pem"
+
+          #network provisioning
+          node_config.vm.provision "shell" do |s|
+            s.path = "/srv/vagrant/shared/configs/networkconf.sh"
+            s.args = hostname
+          end
+
+          #salt system provisioner
+          node_config.vm.provision :salt do |salt|
+           #salt install configs
+           salt.install_master = false
+           salt.install_type = "stable"
+
+           #minion configs
+           salt.minion_config = "/srv/vagrant/shared/configs/minion"
+           salt.minion_key = "/srv/vagrant/shared/keys/minion.pem"
+           salt.minion_pub = "/srv/vagrant/shared/keys/minion.pub"
+
+           #execute top level state
+           salt.run_highstate = true
+          end
+
+          if hostname.downcase.include? "lb" and isLoadBalanced
+            #nginx provisioner
+            node_config.vm.provision "shell" do |s|
+              s.path = "/srv/vagrant/shared/configs/nginxconfig.sh"
+              s.args = [hostname, lbWeb, lbApi]
+            end
+          end
+
+       end #end aws
+      end #end node_conf
+    end #end node
+end #end conf
